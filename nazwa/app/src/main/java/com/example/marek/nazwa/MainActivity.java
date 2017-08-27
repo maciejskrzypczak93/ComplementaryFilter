@@ -90,6 +90,8 @@ public class MainActivity extends AppCompatActivity {
     ArrayList<float[]> Sense = new ArrayList<>();
     ArrayList<float[]> Sense1 = new ArrayList<>();
 
+    float[] eulerAnglesGyro = new float [3];
+    float[] eulerAnglesOrient = new float [3];
     float[] OrientQuat =null;
     float[] qacm = new float [3];
     float[] qgyro = new float [3];
@@ -289,6 +291,48 @@ public class MainActivity extends AppCompatActivity {
         return ret;
     }
 
+    private static float[]Quat2Euler(float[] q1) {
+        double test = q1[1]*q1[2]+q1[3]*q1[0];
+        float[] ret = new float [3];
+        if (test > 0.499){
+            ret[0] = 2 * (float)Math.atan2(q1[1],q1[0]); //heading
+            ret[1] = (float)Math.PI/2;  //attitude
+            ret[2] = 0; //bank
+            return ret;
+        }
+        if (test < -0.499) { // singularity at south pole
+            ret[0] = -2 * (float)Math.atan2(q1[1],q1[0]); //heading
+            ret[1] = - (float)Math.PI/2;  //attitude
+            ret[2] = 0;  //bank
+            return ret;
+        }
+        double sqx = q1[1]*q1[1];
+        double sqy = q1[2]*q1[2];
+        double sqz = q1[3]*q1[3];
+        ret[0] = (float)Math.atan2(2*q1[2]*q1[0]-2*q1[1]*q1[3] , 1 - 2*sqy - 2*sqz);  //headnig
+        ret[1] =(float) Math.asin(2*test);  //attitude
+        ret[2] = (float)Math.atan2(2*q1[1]*q1[0]-2*q1[2]*q1[3] , 1 - 2*sqx - 2*sqz);  //bank
+        return ret;
+    }
+
+    private static float[] Euler2Quat(float heading, float attitude, float bank) {
+        // Assuming the angles are in radians.
+        float c1 = (float)Math.cos(heading);
+        float s1 = (float)Math.sin(heading);
+        float c2 = (float)Math.cos(attitude);
+        float s2 = (float)Math.sin(attitude);
+        float c3 = (float)Math.cos(bank);
+        float s3 = (float)Math.sin(bank);
+        float[] quat = new float[4];
+        quat[0] = (float)Math.sqrt(1.0f + c1 * c2 + c1*c3 - s1 * s2 * s3 + c2*c3) / 2.0f;
+        float w4 = (4.0f * quat[0]);
+        quat[1] = (c2 * s3 + c1 * s3 + s1 * s2 * c3) / w4 ;
+        quat[2] = (s1 * c2 + s1 * c3 + c1 * s2 * s3) / w4 ;
+        quat[3] = (-s1 * s3 + c1 * s2 * c3 +s2) / w4 ;
+
+        return quat;
+    }
+
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -315,75 +359,6 @@ public class MainActivity extends AppCompatActivity {
         filereader("orient.log","orient");
         filereader("Xsense.data","data");
 
-        for (int i=0; i<t_gyro_int.size();i++){  //t_gyro-int.size();
-            //tworzenie wektora xyz
-            qgyro[0]=(float)x_gyro.get(i);
-            qgyro[1]=(float)y_gyro.get(i);
-            qgyro[2]=(float)z_gyro.get(i);
-
-            //dt dla pierwszej probki
-            if (i==0) {
-                dt=1*(float)ms2s;
-            }
-            //dt dla pozostalych probek
-            else{
-                dt = (t_gyro_int.get(i) - t_gyro_int.get(i-1))*(float)ms2s;
-            }
-            //obliczenie kwaternionu
-            compQuatFromGyro(qgyro, dt , GyroQuat);
-
-            //zapis do arraylisty
-            if(quaternion_gyro1.isEmpty()){
-                quaternion_gyro1.add(GyroQuat);
-                quaternion_gyro.add(quaternion_gyro1.get(i).clone());
-            }
-            else {
-                quaternion_gyro1.add(quaternion_gyro1.size() - 1, GyroQuat);
-                quaternion_gyro.add(quaternion_gyro1.get(i).clone());
-            }
-        }
-
-        //mnozenie kwaternionow poprzedni razy nastepny
-
-        QuatGyroW = new float[quaternion_gyro.size()];
-        QuatGyroX = new float[quaternion_gyro.size()];
-        QuatGyroY = new float[quaternion_gyro.size()];
-        QuatGyroZ = new float[quaternion_gyro.size()];
-        for(int i=0;i<quaternion_gyro.size();i++) {
-
-            if (i == 0) {
-                quaternion_gyro_mul1.add(quaternion_gyro.get(i));
-                quaternion_gyro_mul.add(quaternion_gyro_mul1.get(i).clone());
-            }
-            if (i > 0) {
-                quaternion_gyro_mul1.add(quatMul(quaternion_gyro.get(i - 1), quaternion_gyro.get(i)));
-                quaternion_gyro_mul.add(quaternion_gyro_mul1.get(i).clone());
-                //////////////////////////////////////////////// potrzebne do wyswietlania
-                QuatGyroW[i] = quaternion_gyro_mul.get(i)[0];
-                QuatGyroX[i] = quaternion_gyro_mul.get(i)[1];
-                QuatGyroY[i] = quaternion_gyro_mul.get(i)[2];
-                QuatGyroZ[i] = quaternion_gyro_mul.get(i)[3];
-                ////////////////////////////////////////////////
-            }
-        }
-        //LogMap gyro
-        /////////////////////////
-        w = new float[quaternion_gyro.size()];
-        x = new float[quaternion_gyro.size()];
-        y = new float[quaternion_gyro.size()];
-        z = new float[quaternion_gyro.size()];
-        ////////////////////////
-        for(int i=0;i<quaternion_gyro.size();i++) {
-            quaternion_gyro_logmap1.add(logMap(quaternion_gyro_mul.get(i)));
-            quaternion_gyro_logmap.add(quaternion_gyro_logmap1.get(i).clone());
-            ////////////////////////////////////////////
-            w[i] = 0;
-            x[i] = quaternion_gyro_logmap.get(i)[0];
-            y[i] = quaternion_gyro_logmap.get(i)[1];
-            z[i] = quaternion_gyro_logmap.get(i)[2];
-            ////////////////////////////////////////////
-        }
-
         ///////////////////////////////////////////////////////////
 
         for(int i=0;i<t_orient.size();i++){  //t_orient.size()
@@ -404,87 +379,174 @@ public class MainActivity extends AppCompatActivity {
                     (quaternion_acm1.size()-1).clone());
 
         }
-        //////////////////////////////
-        a = new float[quaternion_acm.size()];
-        b = new float[quaternion_acm.size()];
-        c = new float[quaternion_acm.size()];
-        d = new float[quaternion_acm.size()];
-        //////////////////////////////
-        //LogMap orient
-        for(int i=0;i<quaternion_acm.size();i++){
-            quaternion_orient_logmap1.add(logMap(quaternion_acm.get(i)));
-            quaternion_orient_logmap.add(quaternion_orient_logmap1.get(i).clone());
-            ////////////////////////////////
-            a[i]=0;
-            b[i]=quaternion_gyro_logmap.get(i)[0];
-            c[i]=quaternion_gyro_logmap.get(i)[1];
-            d[i]=quaternion_gyro_logmap.get(i)[2];
-            /////////////////////////////////
-        }
 
-
-
-        float[] xyz_filter = new float[3];
         int tSize=0;
-        int i_orient=0;
-        int i_gyro=0;
+
         if(t_orient_int.get(t_orient_int.size()-1)>=t_gyro_int.get(t_gyro_int.size()-1)){
             tSize=(t_orient_int.get(t_orient_int.size()-1));
         }
         else
             tSize=t_gyro_int.get(t_gyro_int.size()-1);
+        //////////////////////////////
+        a = new float[tSize];
+        b = new float[tSize];
+        c = new float[tSize];
+        d = new float[tSize];
+        int licznik_acm=0;
+        //////////////////////////////
+        //LogMap orient
 
-        w_filter = new float[tSize];
-        x_filter = new float[tSize];
-        y_filter = new float[tSize];
-        z_filter = new float[tSize];
-        w_filter_exp = new float[tSize];
-        x_filter_exp = new float[tSize];
-        y_filter_exp = new float[tSize];
-        z_filter_exp = new float[tSize];
-        for (int i=0; i<tSize-1 ;i++) {
-            if(i_gyro>=quaternion_gyro_logmap.size()-1){
-                i_gyro=quaternion_gyro_logmap.size()-1;
+        for(int i=0;i<tSize;i++){
+            if(t_orient_int.contains(i)){
+                quaternion_orient_logmap1.add(logMap(quaternion_acm.get(licznik_acm)));
+                quaternion_orient_logmap.add(quaternion_orient_logmap1.get(i).clone());
+                ////////////////////////////////
+                a[i]=0;
+                b[i]=quaternion_orient_logmap.get(i)[0];
+                c[i]=quaternion_orient_logmap.get(i)[1];
+                d[i]=quaternion_orient_logmap.get(i)[2];
+                licznik_acm++;
+                /////////////////////////////////
             }
-            if(i_gyro>=quaternion_orient_logmap.size()-1){
-                i_gyro=quaternion_orient_logmap.size()-1;
+            else {
+                quaternion_orient_logmap1.add(quaternion_orient_logmap.get(i-1));
+                quaternion_orient_logmap.add(quaternion_orient_logmap1.get(i).clone());
+                ////////////////////////////////
+                a[i]=0;
+                b[i]=quaternion_orient_logmap.get(i-1)[0];
+                c[i]=quaternion_orient_logmap.get(i-1)[1];
+                d[i]=quaternion_orient_logmap.get(i-1)[2];
+                /////////////////////////////////
             }
-            ///mnozenie z waga
+
+        }
+        //////////inicjalizacja filtra
+        float[] filter_init = new float [3];
+        float[] filter_init_exp = new float [4];
+        filter_init[0] = (1 - waga) * quaternion_orient_logmap.get(0)[0];
+        filter_init[1] = (1 - waga) * quaternion_orient_logmap.get(0)[1];
+        filter_init[2] = (1 - waga) * quaternion_orient_logmap.get(0)[2];
+
+        filter_init_exp = expMap(filter_init);
+        /////////////////////////////////
+
+        //gyro
+
+        for (int i=0; i<t_gyro_int.size();i++){  //t_gyro-int.size();
+            //tworzenie wektora xyz
+            qgyro[0]=(float)x_gyro.get(i);
+            qgyro[1]=(float)y_gyro.get(i);
+            qgyro[2]=(float)z_gyro.get(i);
+
+            //dt dla pierwszej probki
+            if (i==0) {
+                dt=1*(float)ms2s;
+            }
+            //dt dla pozostalych probek
+            else{
+                dt = (t_gyro_int.get(i) - t_gyro_int.get(i-1))*(float)ms2s;
+            }
+            //obliczenie kwaternionu
+            //compQuatFromGyro(qgyro, dt , GyroQuat);
+            SensorManager.getQuaternionFromVector(GyroQuat,qgyro);
+
+            //zapis do arraylisty
+            if(quaternion_gyro1.isEmpty()){
+                quaternion_gyro1.add(GyroQuat);
+                quaternion_gyro.add(quaternion_gyro1.get(i).clone());
+            }
+            else {
+                quaternion_gyro1.add(quaternion_gyro1.size() - 1, GyroQuat);
+                quaternion_gyro.add(quaternion_gyro1.get(i).clone());
+            }
+        }
+
+
+        //////////////////////////////////////////////////////////////////////////////////////
+        QuatGyroW = new float[ tSize];
+        QuatGyroX = new float[ tSize];
+        QuatGyroY = new float[ tSize];
+        QuatGyroZ = new float[ tSize];
+        w = new float[ tSize];
+        x = new float[ tSize];
+        y = new float[ tSize];
+        z = new float[ tSize];
+        w_filter = new float[ tSize];
+        x_filter = new float[ tSize];
+        y_filter = new float[ tSize];
+        z_filter = new float[ tSize];
+        w_filter_exp = new float[ tSize];
+        x_filter_exp = new float[ tSize];
+        y_filter_exp = new float[ tSize];
+        z_filter_exp = new float[ tSize];
+        float[] xyz_filter = new float[3];
+        int licznik_gyro=0;
+
+        for(int i=0;i<tSize;i++) {
+
+            //mnozenie kwaternion qyro * aktualne wyjscie filtra
+            if (t_gyro_int.contains(i)){
+                if (i == 0) {
+                    quaternion_gyro_mul1.add(quatMul(quaternion_gyro.get(licznik_gyro), filter_init_exp));
+                    quaternion_gyro_mul.add(quaternion_gyro_mul1.get(i).clone());
+                    licznik_gyro++;
+                }
+                if (i > 0) {
+                    quaternion_gyro_mul1.add(quatMul(quaternion_gyro.get(licznik_gyro), quaternion_exp.get(i-1)));
+                    quaternion_gyro_mul.add(quaternion_gyro_mul1.get(i).clone());
+                    //////////////////////////////////////////////// potrzebne do wyswietlania
+                    QuatGyroW[i] = quaternion_gyro_mul.get(i)[0];
+                    QuatGyroX[i] = quaternion_gyro_mul.get(i)[1];
+                    QuatGyroY[i] = quaternion_gyro_mul.get(i)[2];
+                    QuatGyroZ[i] = quaternion_gyro_mul.get(i)[3];
+                    ////////////////////////////////////////////////
+                    licznik_gyro++;
+                }
+                //logmapGyro
+                quaternion_gyro_logmap1.add(logMap(quaternion_gyro_mul.get(i)));
+                quaternion_gyro_logmap.add(quaternion_gyro_logmap1.get(i).clone());
+                ////////////////////////////////////////////
+                w[i] = 0;
+                x[i] = quaternion_gyro_logmap.get(i)[0];
+                y[i] = quaternion_gyro_logmap.get(i)[1];
+                z[i] = quaternion_gyro_logmap.get(i)[2];
+                ////////////////////////////////////////////
+            }
+            else{
+                quaternion_gyro_mul1.add(quaternion_gyro_mul.get(i-1));
+                quaternion_gyro_mul.add(quaternion_gyro_mul1.get(i).clone());
+                //////////////////////////////////////////////// potrzebne do wyswietlania
+                QuatGyroW[i] = quaternion_gyro_mul.get(i-1)[0];
+                QuatGyroX[i] = quaternion_gyro_mul.get(i-1)[1];
+                QuatGyroY[i] = quaternion_gyro_mul.get(i-1)[2];
+                QuatGyroZ[i] = quaternion_gyro_mul.get(i-1)[3];
+                ////////////////////////////////////////////////
+                quaternion_gyro_logmap1.add(quaternion_gyro_logmap.get(i-1));
+                quaternion_gyro_logmap.add(quaternion_gyro_logmap1.get(i).clone());
+                ////////////////////////////////////////////
+                w[i] = 0;
+                x[i] = quaternion_gyro_logmap.get(i-1)[0];
+                y[i] = quaternion_gyro_logmap.get(i-1)[1];
+                z[i] = quaternion_gyro_logmap.get(i-1)[2];
+                ////////////////////////////////////////////
+            }
+
+
             w_filter[i] = 0;
-            x_filter[i] = waga * quaternion_gyro_logmap.get(i_gyro)[0] +
-                    (1 - waga) * quaternion_orient_logmap.get(i_orient)[0];
-            y_filter[i] = waga * quaternion_gyro_logmap.get(i_gyro)[1] +
-                    (1 - waga) * quaternion_orient_logmap.get(i_orient)[1];
-            z_filter[i] = waga * quaternion_gyro_logmap.get(i_gyro)[2] +
-                    (1 - waga) * quaternion_orient_logmap.get(i_orient)[2];
+            x_filter[i] = waga * quaternion_gyro_logmap.get(i)[0] +
+                    (1 - waga) * quaternion_orient_logmap.get(i)[0];
+            y_filter[i] = waga * quaternion_gyro_logmap.get(i)[1] +
+                    (1 - waga) * quaternion_orient_logmap.get(i)[1];
+            z_filter[i] = waga * quaternion_gyro_logmap.get(i)[2] +
+                    (1 - waga) * quaternion_orient_logmap.get(i)[2];
             ////////////////////////////////
-            xyz_filter[0]=waga * quaternion_gyro_logmap.get(i_gyro)[0] +
-                    (1 - waga) * quaternion_orient_logmap.get(i_orient)[0];
-            xyz_filter[1]=waga * quaternion_gyro_logmap.get(i_gyro)[1] +
-                    (1 - waga) * quaternion_orient_logmap.get(i_orient)[1];
-            xyz_filter[2]=waga * quaternion_gyro_logmap.get(i_gyro)[2] +
-                    (1 - waga) * quaternion_orient_logmap.get(i_orient)[2];
-            //////////////////////////////
-            if(i<t_orient_int.size()-1){
-                if(t_orient_int.get(i+1)==t_orient_int.get(i)){
-                    i_orient++;
-                }
-            }
-            if(i<t_gyro_int.size()-1){
-                if(t_gyro_int.get(i+1)==t_gyro_int.get(i)){
-                    i_gyro++;
-                }
-            }
-            if (t_orient_int.contains(i)&&t_gyro_int.contains(i)){
-                i_orient++;
-                i_gyro++;
-            }
-            else if (t_orient_int.contains(i)&&t_gyro_int.contains(i)==false){
-                i_orient++;
-            }
-            else if (t_orient_int.contains(i)==false&&t_gyro_int.contains(i)){
-                i_gyro++;
-            }
+            xyz_filter[0]=waga * quaternion_gyro_logmap.get(i)[0] +
+                    (1 - waga) * quaternion_orient_logmap.get(i)[0];
+            xyz_filter[1]=waga * quaternion_gyro_logmap.get(i)[1] +
+                    (1 - waga) * quaternion_orient_logmap.get(i)[1];
+            xyz_filter[2]=waga * quaternion_gyro_logmap.get(i)[2] +
+                    (1 - waga) * quaternion_orient_logmap.get(i)[2];
+            //////////////////////////////////
 
             vector_filter1.add(xyz_filter);
             vector_filter.add(vector_filter1.get(i).clone());
@@ -498,6 +560,8 @@ public class MainActivity extends AppCompatActivity {
             z_filter_exp[i] = quaternion_exp.get(i)[3];
             //////////////////////////
         }
+
+
         //rotation matrix to quaternion
         int m00, m11, m22, m21, m12, m02, m20, m10, m01;
         float qw, qx, qy, qz;
@@ -654,7 +718,6 @@ public class MainActivity extends AppCompatActivity {
 
     }
 
-
     public void buttonOnClick(View v){
         Button button = (Button) v;
         ((Button) v).setText("Iteracja: "+Float.toString(licznik_przycisk));
@@ -668,13 +731,16 @@ public class MainActivity extends AppCompatActivity {
             Magnety.setText(Float.toString(y_orient.get(t_orient_int.indexOf(licznik_przycisk))));
             Magnetz.setText(Float.toString(z_orient.get(t_orient_int.indexOf(licznik_przycisk))));
 
+            eulerAnglesOrient = Quat2Euler(quaternion_acm.get(t_orient_int.indexOf(licznik_przycisk)));
+
             //obliczanie pitch roll yaw dla orient
-            Pitch_orient.add((float) Math.atan2(y_orient.get(t_orient_int.indexOf(licznik_przycisk)),
-                    z_orient.get(t_orient_int.indexOf(licznik_przycisk))) * 180 / (float) PI);
-            Roll_orient.add((float) Math.atan2(x_orient.get(t_orient_int.indexOf(licznik_przycisk)),
-                    z_orient.get(t_orient_int.indexOf(licznik_przycisk))) * 180 / (float) PI);
-            Yaw_orient.add((float) Math.atan2(x_orient.get(t_orient_int.indexOf(licznik_przycisk)),
-                    y_orient.get(t_orient_int.indexOf(licznik_przycisk))) * 180 / (float) PI);
+            Pitch_orient.add(eulerAnglesOrient[1]);
+            Roll_orient.add(eulerAnglesOrient[2]);
+            Yaw_orient.add(eulerAnglesOrient[0]);
+            if (licznik_przycisk==10){
+                float[] kwaternion = new float [4];
+                kwaternion=Euler2Quat(0.9356f, -0.00690f, 1.07062f  );   //test - wynik z wyjscia filtra na kwaternion, wartosci wyliczone z matlaba
+            }
         }
         else{
             if(!Pitch_orient.isEmpty()){
@@ -707,13 +773,12 @@ public class MainActivity extends AppCompatActivity {
             Gyroz.setText(Float.toString(z_gyro.get(t_gyro_int.indexOf(licznik_przycisk))));
 
             //obliczanie pitch roll yaw dla gyro
-            gyro_sum_x+=x_gyro.get(t_gyro_int.indexOf(licznik_przycisk));
-            gyro_sum_y+=y_gyro.get(t_gyro_int.indexOf(licznik_przycisk));
-            gyro_sum_z+=z_gyro.get(t_gyro_int.indexOf(licznik_przycisk));
+            eulerAnglesGyro = Quat2Euler(quaternion_gyro.get(t_gyro_int.indexOf(licznik_przycisk)));
 
-            Pitch_gyro.add(gyro_sum_x);
-            Roll_gyro.add(gyro_sum_y);
-            Yaw_gyro.add(gyro_sum_z);
+
+            Pitch_gyro.add(eulerAnglesGyro[1]);
+            Roll_gyro.add(eulerAnglesGyro[2]);
+            Yaw_gyro.add(eulerAnglesGyro[0]);
         }
         else{
             if (!Pitch_gyro.isEmpty()){
